@@ -12,7 +12,10 @@ class ExampleClient {
 			command: "bun",
 			args: ["run", "src/mcp/server.ts"],
 		});
-		this.client = new Client({ name: "example-client", version: "1.0.0" });
+		this.client = new Client({
+			name: "example-client",
+			version: process.env.npm_package_version ?? "1.0.0",
+		});
 	}
 
 	async run(): Promise<void> {

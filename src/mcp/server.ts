@@ -12,7 +12,7 @@ class ExampleServer {
 	constructor() {
 		this.server = new McpServer({
 			name: "demo-server",
-			version: "1.0.0",
+			version: process.env.npm_package_version ?? "1.0.0",
 		});
 		this.transport = new StdioServerTransport();
 		this.registerHandlers();
