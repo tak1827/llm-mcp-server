@@ -1,17 +1,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 // Example MCP client implemented as a class
 
 class ExampleClient {
 	readonly client: Client;
-	readonly transport: StdioClientTransport;
+	readonly transport: StreamableHTTPClientTransport;
 
-	constructor() {
-		this.transport = new StdioClientTransport({
-			command: "bun",
-			args: ["run", "src/mcp/server.ts"],
-		});
+	constructor(serverUrl = "http://localhost:3000/mcp") {
+		this.transport = new StreamableHTTPClientTransport(serverUrl, {});
 		this.client = new Client({
 			name: "example-client",
 			version: process.env.npm_package_version ?? "1.0.0",

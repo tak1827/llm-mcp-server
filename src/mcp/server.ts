@@ -1,20 +1,37 @@
+import { randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
 // Example MCP server demonstrating tools, resources and prompts implemented as a class
 
 class ExampleServer {
 	readonly server: McpServer;
-	readonly transport: StdioServerTransport;
+	readonly transport: StreamableHTTPServerTransport;
+	readonly port: number;
+	private httpServer;
 
-	constructor() {
+	constructor(port = 3000) {
 		this.server = new McpServer({
 			name: "demo-server",
 			version: process.env.npm_package_version ?? "1.0.0",
 		});
-		this.transport = new StdioServerTransport();
+		this.transport = new StreamableHTTPServerTransport({
+			sessionIdGenerator: () => randomUUID(),
+		});
+		this.port = port;
+		this.httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+			if (req.url === "/mcp") {
+				this.transport.handleRequest(req, res).catch((err) => {
+					console.error("Failed to handle request", err);
+				});
+			} else {
+				res.statusCode = 404;
+				res.end();
+			}
+		});
 		this.registerHandlers();
 	}
 
@@ -110,6 +127,8 @@ class ExampleServer {
 
 	async start(): Promise<void> {
 		await this.server.connect(this.transport);
+		await new Promise<void>((resolve) => this.httpServer.listen(this.port, resolve));
+		console.log(`MCP HTTP server listening on http://localhost:${this.port}/mcp`);
 	}
 }
 
