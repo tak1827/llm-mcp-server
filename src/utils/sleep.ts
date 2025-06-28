@@ -10,4 +10,3 @@ export const sleepCancelable = (ms: number, onCancel: (clearTimer: () => void) =
 		});
 	});
 };
-

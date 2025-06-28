@@ -87,4 +87,3 @@ export const Env = {
 	array: (envName: string, separator = ",") =>
 		getEnv<string[]>(envName, (value) => value.split(separator)),
 };
-

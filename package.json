@@ -1,24 +1,24 @@
 {
-  "name": "mcp-server",
-  "type": "module",
-  "version": "0.0.1",
-  "scripts": {
-    "test": "NODE_ENV=test bun test",
-    "fmt": "biome format --write .",
-    "lint": "biome check --write --unsafe ."
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.0.6",
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.13.2",
-    "dotenv": "^17.0.0",
-    "node-llama-cpp": "^3.10.0",
-    "pino": "^9.7.0",
-    "pino-pretty": "^13.0.0"
-  }
+	"name": "mcp-server",
+	"type": "module",
+	"version": "0.0.1",
+	"scripts": {
+		"test": "NODE_ENV=test bun test",
+		"fmt": "biome format --write .",
+		"lint": "biome check --write --unsafe ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.0.6",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.13.2",
+		"dotenv": "^17.0.0",
+		"node-llama-cpp": "^3.10.0",
+		"pino": "^9.7.0",
+		"pino-pretty": "^13.0.0"
+	}
 }

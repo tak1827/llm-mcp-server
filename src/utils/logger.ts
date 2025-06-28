@@ -38,4 +38,3 @@ export function logger(level: LogLevel = process.env.LOG_LEVEL as LogLevel): pin
 
 // Default export for convenience
 export default logger();
-

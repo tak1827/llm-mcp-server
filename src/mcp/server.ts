@@ -1,9 +1,6 @@
-import {
-	McpServer,
-	ResourceTemplate,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
 // Example MCP server demonstrating tools, resources and prompts implemented as a class
@@ -82,24 +79,16 @@ class ExampleServer {
 				description: "Generate a greeting for team members",
 				argsSchema: {
 					department: completable(z.string(), (value) =>
-						["engineering", "sales", "marketing", "support"].filter((d) =>
-							d.startsWith(value),
-						),
+						["engineering", "sales", "marketing", "support"].filter((d) => d.startsWith(value)),
 					),
 					name: completable(z.string(), (value, context) => {
-						const dept = context?.arguments?.["department"];
+						const dept = context?.arguments?.department;
 						if (dept === "engineering") {
-							return ["Alice", "Bob", "Charlie"].filter((n) =>
-								n.startsWith(value),
-							);
+							return ["Alice", "Bob", "Charlie"].filter((n) => n.startsWith(value));
 						} else if (dept === "sales") {
-							return ["David", "Eve", "Frank"].filter((n) =>
-								n.startsWith(value),
-							);
+							return ["David", "Eve", "Frank"].filter((n) => n.startsWith(value));
 						} else if (dept === "marketing") {
-							return ["Grace", "Henry", "Iris"].filter((n) =>
-								n.startsWith(value),
-							);
+							return ["Grace", "Henry", "Iris"].filter((n) => n.startsWith(value));
 						}
 						return ["Guest"].filter((n) => n.startsWith(value));
 					}),
