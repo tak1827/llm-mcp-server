@@ -15,6 +15,7 @@ describe("readUserJsonFiles", () => {
 			{
 				client_name: "Test MCP Client",
 				server_url: "http://localhost:8090",
+				auth_server_url: "http://localhost:3001",
 				redirect_uris: ["http://localhost:8090/callback"],
 				scope: "mcp:tools",
 				client_id: "d451b808-9b87-470e-89e3-2d280555fc54",
@@ -23,6 +24,7 @@ describe("readUserJsonFiles", () => {
 			{
 				client_name: "Another Test Client",
 				server_url: "http://localhost:8091",
+				auth_server_url: "http://localhost:3001",
 				redirect_uris: ["http://localhost:8091/callback", "http://localhost:8092/callback"],
 				scope: "mcp:tools mcp:resources",
 				client_id: "another-client-id-456",

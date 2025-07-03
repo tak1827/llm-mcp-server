@@ -1,4 +1,7 @@
-import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import {
+	type OAuthClientProvider,
+	refreshAuthorization,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
 	OAuthClientInformation,
 	OAuthClientInformationFull,
@@ -8,19 +11,17 @@ import type {
 import type { MCPClientJsonSchema } from "../users";
 import logger from "../utils/logger";
 
-/**
- * In-memory OAuth client provider for demonstration purposes
- * In production, you should persist tokens securely
- */
 export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 	private readonly _clientMetadata: OAuthClientMetadata;
 	private readonly _redirectUrl;
-	private readonly _serverUrl: URL;
-	private _clientInformation?: OAuthClientInformationFull;
+	private readonly _serverUrl: string;
+	private readonly _authServerUrl: string;
+	private _clientInformation: OAuthClientInformationFull;
 	private _tokens?: OAuthTokens;
 	private _codeVerifier?: string;
+	private _timer?: NodeJS.Timeout;
 
-	constructor(clientJson: MCPClientJsonSchema) {
+	constructor(clientJson: MCPClientJsonSchema, signal?: AbortSignal) {
 		this._clientMetadata = {
 			client_name: clientJson.client_name,
 			redirect_uris: clientJson.redirect_uris,
@@ -38,7 +39,13 @@ export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 			throw new Error("empty redirect_uris");
 		}
 		this._redirectUrl = this._clientMetadata.redirect_uris[0] || "";
-		this._serverUrl = new URL(clientJson.server_url);
+		this._serverUrl = clientJson.server_url;
+		this._authServerUrl = clientJson.auth_server_url;
+		if (signal) {
+			signal.addEventListener("abort", () => {
+				if (this._timer) clearTimeout(this._timer);
+			});
+		}
 	}
 
 	private _onRedirect(url: URL): void {
@@ -62,7 +69,11 @@ export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 	}
 
 	get serverUrl(): URL {
-		return this._serverUrl;
+		return new URL(this._serverUrl);
+	}
+
+	get authServerUrl(): URL {
+		return new URL(this._authServerUrl);
 	}
 
 	get clientMetadata(): OAuthClientMetadata {
@@ -83,6 +94,30 @@ export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 
 	saveTokens(tokens: OAuthTokens): void {
 		this._tokens = tokens;
+		if (tokens.expires_in && tokens.refresh_token) {
+			this._setTokenRefreshTimer(tokens.expires_in, tokens.refresh_token);
+		}
+		logger.trace(tokens, `[mcp] token saved`);
+	}
+
+	_setTokenRefreshTimer(expireIn: number, refreshToken: string): void {
+		const refreshIn = expireIn - 10;
+		logger.debug(
+			`[mcp] Setting token refresh timer for ${refreshIn} seconds: ${this._authServerUrl}`,
+		);
+
+		this._timer = setTimeout(async () => {
+			try {
+				const token = await refreshAuthorization(this._authServerUrl, {
+					clientInformation: this._clientInformation,
+					refreshToken,
+				});
+				logger.trace(`[mcp] Token refreshed: ${this._authServerUrl}`);
+				this.saveTokens(token);
+			} catch (error) {
+				logger.error(error, `[mcp] Token refresh failed: ${this._authServerUrl}`);
+			}
+		}, refreshIn * 1000);
 	}
 
 	redirectToAuthorization(authorizationUrl: URL): void {

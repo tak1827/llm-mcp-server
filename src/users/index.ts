@@ -7,6 +7,7 @@ import logger from "../utils/logger";
 const MCPClientSchema = z.object({
 	client_name: z.string(),
 	server_url: z.string(),
+	auth_server_url: z.string(),
 	redirect_uris: z.array(z.string()),
 	scope: z.string(),
 	client_id: z.string(),
@@ -31,7 +32,7 @@ export type UserJsonSchema = z.infer<typeof UserSchema>;
 export async function readUserJsonFiles(usersDirPath?: string): Promise<UserJsonSchema[]> {
 	// 1. Get absolute path of the data/users directory
 	const usersDir = usersDirPath || resolve(process.cwd(), "data", "users");
-	logger.debug(`📁 Reading user files from: ${usersDir}`);
+	logger.debug(`[users] Reading user files from: ${usersDir}`);
 
 	try {
 		// 2. Identify all files ending with .json
@@ -39,7 +40,7 @@ export async function readUserJsonFiles(usersDirPath?: string): Promise<UserJson
 		const jsonFiles = files.filter((file) => file.endsWith(".json"));
 
 		if (jsonFiles.length === 0) {
-			logger.warn("⚠️ No JSON files found in users directory");
+			logger.warn("[users] No JSON files found in users directory");
 			return [];
 		}
 
@@ -48,7 +49,7 @@ export async function readUserJsonFiles(usersDirPath?: string): Promise<UserJson
 		// 3. Read all the content of each file
 		for (const file of jsonFiles) {
 			const filePath = join(usersDir, file);
-			logger.debug(`📖 Reading file: ${file}`);
+			logger.trace(`[users] Reading file: ${file}`);
 
 			try {
 				const fileContent = await readFile(filePath, "utf-8");
@@ -58,7 +59,7 @@ export async function readUserJsonFiles(usersDirPath?: string): Promise<UserJson
 				const validatedUser = UserSchema.parse(userData);
 				users.push(validatedUser);
 
-				logger.debug(`✅ Successfully validated user: ${validatedUser.user_id}`);
+				logger.trace(`[users] Successfully validated user: ${validatedUser.user_id}`);
 			} catch (parseError) {
 				if (parseError instanceof SyntaxError) {
 					throw new Error(`Invalid JSON in file ${file}: ${parseError.message}`);
@@ -73,7 +74,7 @@ export async function readUserJsonFiles(usersDirPath?: string): Promise<UserJson
 			}
 		}
 
-		logger.debug(`🎉 Successfully loaded ${users.length} user(s)`);
+		logger.info(`[users] Successfully loaded ${users.length} user(s)`);
 		return users;
 	} catch (error) {
 		if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
