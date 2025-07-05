@@ -19,7 +19,6 @@ export class LLamaCppModel {
 	#model?: LlamaModel;
 	#context?: LlamaContext;
 	#defaultPromptOptions: Partial<LLamaChatPromptOptions> = {
-		signal: this.#abortController.signal,
 		trimWhitespaceSuffix: true,
 		stopOnAbortSignal: true,
 	};
@@ -62,6 +61,10 @@ export class LLamaCppModel {
 		this.#closing = false;
 	}
 
+	public async [Symbol.asyncDispose]() {
+		await this.close();
+	}
+
 	public name(): string {
 		return this.#modelName;
 	}
@@ -84,6 +87,7 @@ export class LLamaCppModel {
 			session?: LlamaChatSession;
 			onTextChunk?: (text: string) => void;
 			functions?: ChatSessionModelFunctions;
+			signal?: AbortSignal;
 		},
 	): Promise<string> {
 		if (this.#closing) throw this.#closingError;
@@ -98,6 +102,7 @@ export class LLamaCppModel {
 			},
 			// biome-ignore lint/suspicious/noExplicitAny: inevitable
 			functions: opt?.functions as any,
+			signal: opt?.signal || this.#abortController.signal,
 		});
 		if (!opt || !opt.session) session.dispose();
 		return result;
