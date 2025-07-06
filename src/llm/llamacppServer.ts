@@ -8,7 +8,6 @@ import {
 } from "node-llama-cpp";
 import { MCPClient } from "../mcp/mcpClient";
 import { readUserJsonFiles, type UserJsonSchema } from "../users";
-import { Env } from "../utils/env";
 import logger from "../utils/logger";
 import { LLamaCppModel } from "./llamacpp";
 
@@ -39,30 +38,39 @@ export class LlamaCppServer {
 	#closing = false;
 	#tokenToUserMap: Map<string, UserInfo>;
 
-	constructor(host: string, port: number, embedTimeout = 60000) {
+	constructor(
+		host: string,
+		port: number,
+		opts: { embedTimeout?: number; modelPath: string; embeddingModelPath?: string },
+	) {
 		this.host = host;
 		this.port = port;
-		this.embedTimeout = embedTimeout;
+		this.embedTimeout = opts.embedTimeout || 60000;
 		const templatePath = process.env.LLM_TEMPLATE_PATH;
-		this.#inferModel = new LLamaCppModel(Env.path("LLM_MODEL_PATH"), { templatePath });
-		this.#embedModel = process.env.LLM_EMBEDDING_MODEL_PATH
-			? new LLamaCppModel(Env.path("LLM_EMBEDDING_MODEL_PATH"))
+		this.#inferModel = new LLamaCppModel(opts.modelPath, { templatePath });
+		this.#embedModel = opts.embeddingModelPath
+			? new LLamaCppModel(opts.embeddingModelPath)
 			: undefined;
 		this.#abortController = new AbortController();
 		this.#tokenToUserMap = new Map();
 	}
 
-	async init() {
+	async init(): Promise<LlamaCppServer> {
 		const users = await readUserJsonFiles();
 		for (const user of users) {
 			const mcpClient =
-				user.mcp_clients.length > 0 ? new MCPClient(user, this.port) : undefined;
+				user.mcp_clients.length > 0
+					? new MCPClient(user, this.#abortController.signal)
+					: undefined;
 			await mcpClient?.connect();
 			const tools = await mcpClient?.listTool();
 			const functions =
 				mcpClient && tools ? this.#mapToolsToLlamaFunctions(mcpClient, tools) : undefined;
 			this.#tokenToUserMap.set(user.bearer_token, { user, mcpClient, functions });
 		}
+		await this.#inferModel.init();
+		await this.#embedModel?.init();
+		return this;
 	}
 
 	#mapToolsToLlamaFunctions(

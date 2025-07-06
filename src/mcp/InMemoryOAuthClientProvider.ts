@@ -41,23 +41,22 @@ export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 		this._redirectUrl = this._clientMetadata.redirect_uris[0] || "";
 		this._serverUrl = clientJson.server_url;
 		this._authServerUrl = clientJson.auth_server_url;
-		if (signal) {
-			signal.addEventListener("abort", () => {
-				if (this._timer) clearTimeout(this._timer);
-			});
-		}
+		if (signal) signal.addEventListener("abort", () => this._clearRefreshTimer());
 	}
 
 	private _onRedirect(url: URL): void {
-		logger.info(`[mcp] OAuth redirect handler called - ${url.toString()}`);
+		logger.trace(`[mcp] OAuth redirect handler called - ${url.toString()}`);
 
 		// call auth callback endpoint
 		fetch(url.toString())
 			.then(async (response) => {
 				const body = (await response.json()) as { message: string };
-				logger.info(
+				logger.debug(
 					`[mcp] OAuth redirect handler response: ${response.status} ${body.message}`,
 				);
+				if (response.status !== 200) {
+					logger.error(`[mcp] Unexpected OAuth redirect handler response`);
+				}
 			})
 			.catch((error) => {
 				logger.error(`[mcp] OAuth redirect handler error: ${error}`);
@@ -100,7 +99,7 @@ export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 		logger.trace(tokens, `[mcp] token saved`);
 	}
 
-	_setTokenRefreshTimer(expireIn: number, refreshToken: string): void {
+	private _setTokenRefreshTimer(expireIn: number, refreshToken: string): void {
 		const refreshIn = expireIn - 10;
 		logger.debug(
 			`[mcp] Setting token refresh timer for ${refreshIn} seconds: ${this._authServerUrl}`,
@@ -118,6 +117,14 @@ export class InMemoryOAuthClientProvider implements OAuthClientProvider {
 				logger.error(error, `[mcp] Token refresh failed: ${this._authServerUrl}`);
 			}
 		}, refreshIn * 1000);
+	}
+
+	private _clearRefreshTimer(): void {
+		if (this._timer) {
+			clearTimeout(this._timer);
+			this._timer = undefined;
+			logger.debug(`[mcp] Token refresh timer cleared`);
+		}
 	}
 
 	redirectToAuthorization(authorizationUrl: URL): void {

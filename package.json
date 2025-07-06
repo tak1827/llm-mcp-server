@@ -4,6 +4,7 @@
 	"version": "0.0.1",
 	"scripts": {
 		"test": "NODE_ENV=test bun test",
+		"start": "bun run src/cmd/server.ts",
 		"fmt": "biome format --write .",
 		"lint": "biome check --write --unsafe ."
 	},
