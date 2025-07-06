@@ -1,10 +1,13 @@
 import type { Server } from "node:http";
+import type { ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import express, { type NextFunction, type Request, type Response } from "express";
 import {
+	type ChatSessionModelFunction,
 	type ChatSessionModelFunctions,
 	defineChatSessionFunction,
-	type GbnfJsonSchema,
 } from "node-llama-cpp";
+import { MCPClient } from "../mcp/mcpClient";
+import { readUserJsonFiles, type UserJsonSchema } from "../users";
 import { Env } from "../utils/env";
 import logger from "../utils/logger";
 import { LLamaCppModel } from "./llamacpp";
@@ -13,42 +16,86 @@ export type InferRequest = {
 	prompt: string;
 	temperature?: number;
 	stopText?: string[];
-	tools?: ToolSchema[];
-};
-
-export type ToolSchema = {
-	name: string;
-	description: string;
-	parameters: Readonly<GbnfJsonSchema> | undefined;
-	httpMethod: "GET" | "POST";
-	bearerToken?: string;
-	url: string;
 };
 
 export type EmbedRequest = {
 	text: string;
 };
 
+export type UserInfo = {
+	user: UserJsonSchema;
+	mcpClient?: MCPClient;
+	functions?: ChatSessionModelFunctions;
+};
+
 export class LlamaCppServer {
 	readonly host: string;
 	readonly port: number;
-	readonly token: string;
 	readonly embedTimeout: number;
 	#abortController: AbortController;
 	#server?: Server;
 	#inferModel: LLamaCppModel;
-	#embedModel: LLamaCppModel;
+	#embedModel?: LLamaCppModel;
 	#closing = false;
+	#tokenToUserMap: Map<string, UserInfo>;
 
-	constructor(host: string, port: number, token: string, embedTimeout = 60000) {
+	constructor(host: string, port: number, embedTimeout = 60000) {
 		this.host = host;
 		this.port = port;
-		this.token = token;
 		this.embedTimeout = embedTimeout;
 		const templatePath = process.env.LLM_TEMPLATE_PATH;
 		this.#inferModel = new LLamaCppModel(Env.path("LLM_MODEL_PATH"), { templatePath });
-		this.#embedModel = new LLamaCppModel(Env.path("LLM_EMBEDDING_MODEL_PATH"));
+		this.#embedModel = process.env.LLM_EMBEDDING_MODEL_PATH
+			? new LLamaCppModel(Env.path("LLM_EMBEDDING_MODEL_PATH"))
+			: undefined;
 		this.#abortController = new AbortController();
+		this.#tokenToUserMap = new Map();
+	}
+
+	async init() {
+		const users = await readUserJsonFiles();
+		for (const user of users) {
+			const mcpClient =
+				user.mcp_clients.length > 0 ? new MCPClient(user, this.port) : undefined;
+			await mcpClient?.connect();
+			const tools = await mcpClient?.listTool();
+			const functions =
+				mcpClient && tools ? this.#mapToolsToLlamaFunctions(mcpClient, tools) : undefined;
+			this.#tokenToUserMap.set(user.bearer_token, { user, mcpClient, functions });
+		}
+	}
+
+	#mapToolsToLlamaFunctions(
+		mcpClient: MCPClient,
+		toolsResult: ListToolsResult,
+	): ChatSessionModelFunctions {
+		// biome-ignore lint/suspicious/noExplicitAny: inevitable
+		const functions: Record<string, ChatSessionModelFunction<any>> = {};
+		for (const tool of toolsResult.tools) {
+			if (!tool.inputSchema || tool.inputSchema.type !== "object") {
+				logger.warn(`Tool '${tool.name}' has no input schema or is not an object`);
+				continue;
+			}
+
+			functions[tool.name] = defineChatSessionFunction({
+				description: tool.description,
+				// biome-ignore lint/suspicious/noExplicitAny: inevitable
+				params: tool.inputSchema as any,
+				handler: async (params?: Record<string, unknown>): Promise<unknown> => {
+					const result = await mcpClient.callTool(tool.name, params ?? {});
+					return result.content;
+				},
+			});
+		}
+		return functions;
+	}
+
+	_getUserInfo(req: Request): UserInfo | undefined {
+		if (!Object.hasOwn(req, "userInfo")) {
+			return undefined;
+		}
+		// biome-ignore lint/suspicious/noExplicitAny: safe
+		return (req as any).userInfo as UserInfo;
 	}
 
 	async start(): Promise<void> {
@@ -56,14 +103,17 @@ export class LlamaCppServer {
 		app.use(express.json());
 
 		await this.#inferModel.init();
-		await this.#embedModel.init();
+		await this.#embedModel?.init();
 
 		const auth = (req: Request, res: Response, next: NextFunction) => {
 			const authHeader = req.headers.authorization || "";
-			if (authHeader !== `Bearer ${this.token}`) {
+			const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+			if (!this.#tokenToUserMap?.has(token)) {
 				res.status(401).json({ error: "Unauthorized" });
 				return;
 			}
+			// biome-ignore lint/suspicious/noExplicitAny: safe
+			(req as any).userInfo = this.#tokenToUserMap?.get(token);
 			next();
 		};
 
@@ -73,10 +123,11 @@ export class LlamaCppServer {
 		});
 
 		app.post("/infer", auth, async (req: Request, res: Response) => {
-			logger.info("[llamaserver] /infer called");
+			const userInfo = this._getUserInfo(req);
+			logger.info(`[llamaserver] /infer called: user_id=${userInfo?.user.user_id}`);
 
 			// validate request body
-			const { prompt, temperature, stopText, tools, err } = this.#validateInferRequest(req);
+			const { prompt, temperature, stopText, err } = this.#validateInferRequest(req);
 			if (err) {
 				res.status(400).json({ error: err });
 				return;
@@ -98,7 +149,7 @@ export class LlamaCppServer {
 						const safeChunk = chunk.replace(/\n/g, "[BREAK]");
 						res.write(`data:${safeChunk}\n\n`);
 					},
-					functions: tools ? this.#parseToolSchema(tools) : undefined,
+					functions: userInfo?.functions,
 					signal: this.#abortController.signal,
 				});
 				res.write("data:[EOF]\n\n");
@@ -112,7 +163,13 @@ export class LlamaCppServer {
 		});
 
 		app.post("/embedding", auth, async (req: Request, res: Response) => {
-			logger.info("[llamaserver] /embedding called");
+			const userInfo = this._getUserInfo(req);
+			logger.info(`[llamaserver] /embedding called: user_id=${userInfo?.user.user_id}`);
+
+			if (!this.#embedModel) {
+				res.status(500).json({ error: "Embedding model not found" });
+				return;
+			}
 
 			// validate request body
 			const { text, err } = this.#validateEmbeddingRequest(req);
@@ -126,7 +183,7 @@ export class LlamaCppServer {
 
 			// embed the text
 			try {
-				const emb = await this.#embedModel?.embed(text);
+				const emb = await this.#embedModel.embed(text);
 				res.json({ embedding: emb });
 			} catch (err) {
 				logger.error(err, "[llamaserver] embedding error");
@@ -148,7 +205,7 @@ export class LlamaCppServer {
 
 		// Close the models first
 		await this.#inferModel.close();
-		await this.#embedModel.close();
+		await this.#embedModel?.close();
 
 		// wait for the server to close
 		if (this.#server) {
@@ -189,54 +246,5 @@ export class LlamaCppServer {
 			return { text: "", err: "text required" };
 		}
 		return { text };
-	}
-
-	#toolHandlers = {
-		GET: (tool: ToolSchema) => {
-			const headers: Record<string, string> = { "Content-Type": "application/json" };
-			if (tool.bearerToken) headers.Authorization = `Bearer ${tool.bearerToken}`;
-
-			return async (_params: unknown): Promise<unknown> => {
-				try {
-					const response = await fetch(tool.url, {
-						method: "GET",
-						headers,
-					});
-					return response.json();
-				} catch (err) {
-					return { error: (err as Error).message };
-				}
-			};
-		},
-		POST: (tool: ToolSchema) => {
-			const headers: Record<string, string> = { "Content-Type": "application/json" };
-			if (tool.bearerToken) headers.Authorization = `Bearer ${tool.bearerToken}`;
-
-			return async (params: unknown): Promise<unknown> => {
-				try {
-					const response = await fetch(tool.url, {
-						method: "POST",
-						body: JSON.stringify(params),
-						headers,
-					});
-					return response.json();
-				} catch (err) {
-					return { error: (err as Error).message };
-				}
-			};
-		},
-	};
-
-	#parseToolSchema(tools: ToolSchema[]): ChatSessionModelFunctions {
-		const functions: Record<string, unknown> = {};
-		for (const tool of tools) {
-			functions[tool.name] = defineChatSessionFunction({
-				description: tool.description,
-				// biome-ignore lint/suspicious/noExplicitAny: inevitable
-				params: tool.parameters as any,
-				handler: this.#toolHandlers[tool.httpMethod](tool),
-			});
-		}
-		return functions as ChatSessionModelFunctions;
 	}
 }
