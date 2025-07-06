@@ -1,4 +1,3 @@
-import { Env } from "../utils/env";
 import logger from "../utils/logger";
 import { sleep } from "../utils/sleep";
 
@@ -13,13 +12,6 @@ export class LlamaCppClient {
 	constructor(host: string, port: number, token: string) {
 		this.baseUrl = `http://${host}:${port}`;
 		this.token = token;
-	}
-
-	static fromEnv(): LlamaCppClient {
-		const host = Env.string("LLM_SERVER_HOST");
-		const port = Env.number("LLM_SERVER_PORT");
-		const token = Env.string("LLM_SERVER_TOKEN");
-		return new LlamaCppClient(host, port, token);
 	}
 
 	async init(): Promise<LlamaCppClient> {

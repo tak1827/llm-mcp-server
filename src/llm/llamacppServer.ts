@@ -90,8 +90,12 @@ export class LlamaCppServer {
 				// biome-ignore lint/suspicious/noExplicitAny: inevitable
 				params: tool.inputSchema as any,
 				handler: async (params?: Record<string, unknown>): Promise<unknown> => {
+					logger.debug(
+						`[llamaserver] calling tool: ${tool.name}, params: ${JSON.stringify(params)}`,
+					);
 					const result = await mcpClient.callTool(tool.name, params ?? {});
-					return result.content;
+					logger.debug(`[llamaserver] tool result: ${JSON.stringify(result.content)}`);
+					return result.content || `Empty result from tool ${tool.name}`;
 				},
 			});
 		}
