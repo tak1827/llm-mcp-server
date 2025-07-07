@@ -63,7 +63,7 @@ export class LlamaCppServer {
 					? new MCPClient(user, this.#abortController.signal)
 					: undefined;
 			await mcpClient?.connect();
-			const tools = await mcpClient?.listTool();
+			const tools = await mcpClient?.listAllTools();
 			const functions =
 				mcpClient && tools ? this.#mapToolsToLlamaFunctions(mcpClient, tools) : undefined;
 			this.#tokenToUserMap.set(user.bearer_token, { user, mcpClient, functions });
